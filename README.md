@@ -13,6 +13,12 @@ This is an experiment in building a dialect that will:
   point is: get rid of loops to achieve better conciseness and readability of the code
 - be very simple, no sophisticated type inference (as a result, no laziness), just the bare minimum
 
+## quick start
+
+download, run pure-fun-test.red, the test is the best explanation ;)
+
+some more info is in the file headers too
+
 ## status
 
 early alpha, very very early
