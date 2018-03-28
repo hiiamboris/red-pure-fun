@@ -67,11 +67,11 @@ profiler: context [
 	count: func ['name [set-word!] func-def [function!]] [
 		do compose [set (to-lit-word name)
 			func spec-of :func-def compose/only [
-				profiler/start (to-word name)
+				start (to-word name)
 				; if I just redefined "return:", any inner (unprofiled) function call would've jumped here immediately
 				return*: func [x][throw/name x 'return]
 				set/any 'r catch/name (body-of :func-def) 'return
-				profiler/stop (to-word name)
+				if (to-lit-word name) = last stack (compose [stop (to-word name)])
 				:r
 			]
 		]

@@ -177,13 +177,14 @@ pattern: context [
 	;free-list: stacks...
 
 	; simple & fast iterator version
-	list-iterator: make (iterator/forward) [
-		needs-a-kick?: does [empty? subject/1]
-		data: does [
+	list-iterator: has [it] [
+		it: iterator/forward
+		it/needs-a-kick?: does bind [empty? subject/1] it
+		it/data: does bind [
 			assert [not empty? subject/1]
 			subject/1
-		]
-		advance: does [
+		] it
+		it/advance: does bind [
 			assert [none? subject/3]
 			assert [none? subject/4]
 			if not tail? subject/1 [
@@ -191,7 +192,8 @@ pattern: context [
 				return not tail? subject/1
 			]
 			false
-		]
+		] it
+		it
 	]
 
 	; check if value matches the token
@@ -237,17 +239,20 @@ pattern: context [
 	; full-featured tree iterator
 	; requires all the fields set - tree, size, token (otherwise how to kickstart it and how to navigate in subcontexts?)
 	; since cue is matched against each pattern, it should a value occurred in expr (as is, even none!)
-	tree-iterator: make (iterator/forward) [
+	tree-iterator: has [it] [
+		it: iterator/forward
 		; subject is: [pos-in-plist size outer-tree|none 1st-token|none]
-		needs-a-kick?: does [empty? subject/1]
-		data: does [
+		; initially not on the data, but will go with a kick
+		; have to recreate all the funcs because each iterator is bound to it's own context
+		it/needs-a-kick?: does bind [empty? subject/1] it
+		it/data: does bind [
 			assert [not empty? subject/1]
 			assert [not empty? subject/1/1		"pattern can't be empty"]
 			assert [token-match? subject/1/1/1 cue		"cue/pattern mismatch detected, oops"]
 			subject/1
-		]
+		] it
 		profiler/count
-		advance: function [][
+		advance: function [] bind [
 			set [pos size tree cue] subject
 			assert [valid-tree? tree	'subject]
 			assert [integer? size		'subject]
@@ -297,15 +302,17 @@ pattern: context [
 
 			subject/1: pos
 			false
-		]
+		] it
+		it/advance: :advance
+		it
 	]
 
 	; simplistic iterator over a flat pattern list
-	over-list: func [pl [block!] /skip n [integer!]] [
+	over-list: func [pl [block!] /skip n [integer!] /local it] [
 		assert [valid-list? pl]
-		make list-iterator [
-			subject: transmute [either n [skip pl n * 2][pl]  none none none]
-		]
+		it: list-iterator
+		it/subject: transmute [either n [skip pl n * 2][pl]  none none none]
+		it
 	]
 
 	assert [123  = rollin' 'x over-list [[p][x]] [0 break/return 123]		"rollin's broken"]
@@ -313,12 +320,11 @@ pattern: context [
 	assert [none = rollin' 'x over-list [] [123]	"rollin's broken"]
 
 	; takes a tree and pattern size, and a cue
-	over-tree: func [pt [block!] size [integer!] cue] [
+	over-tree: func [pt [block!] size [integer!] cue /local it] [
 		assert [valid-tree? pt]
-		make tree-iterator [
-			subject: transmute [[] size pt cue]
-			; initially not on the data, but will go with a kick
-		]
+		it: tree-iterator
+		it/subject: transmute [[] size pt cue]
+		it
 	]
 
 	; takes a pattern-list and makes a context out of it

@@ -52,13 +52,19 @@ if unset? :iterator [
 ; general forward iterator format:
 iterator: context [
 
+	free-list: []
+	release: func [it [object!]] [append free-list it]
+
 	; TODO: a free list of iterators, until GC is there
 	forward: func ["Constructs a new iterator"] [
-		context [
-			advance: does [false]				; advances the iterator to the next position, in place, returns true on success, false if empty
-			data: does []								; reads the current item and returns, doesn't advance
-			needs-a-kick?: does [true]	; checks if there's no more items to return - for the initial advance() call
-			subject: none								; the stuff that's being iterated over, any format
+		any [
+			take/last free-list
+			context [
+				advance: does [false]				; advances the iterator to the next position, in place, returns true on success, false if empty
+				data: does []								; reads the current item and returns, doesn't advance
+				needs-a-kick?: does [true]	; checks if there's no more items to return - for the initial advance() call
+				subject: none								; the stuff that's being iterated over, any format
+			]
 		]
 	]
 
@@ -77,18 +83,25 @@ iterator: context [
 	; rollin' 'x over stuff [...]
 	; rollin' [x y z] over stuff [...]
 	; BUG: 'return' from inside the body will only terminate the loop, but the workaround is slower
+	profiler/count
 ;	rollin': func [parts [block! word!] it [iterator!] code [block!] /local r] [
-	rollin': func [parts [block! word!] it [object!] code [block!] /local r C4] [
-		profiler/start rollin'
-		C4: [profiler/stop rollin']
+	rollin': func [
+		"Iterate over arbitrary data"
+		parts [block! word!] "data receiver"
+		it [object!] "iterator"
+		code [block!] "what to do"
+		/keep "don't call release on the iterator"
+		/local r C4
+	] [
+		C4: [unless keep [release it]]
 		assert [iterator? it]
-		if it/needs-a-kick? [ unless it/advance [do C4  return none] ]		; kick-start if need be
+		if it/needs-a-kick? [ unless it/advance [do C4  return* none] ]		; kick-start if need be
 		set/any 'r forever [
 			set parts it/data
-			do C4
+			profiler/stop rollin'
 			set/any 'r do code
 			profiler/start rollin'
-			unless it/advance [do C4  return :r]
+			unless it/advance [do C4  return* :r]
 		]		; in case of break/return it's value is propagated up
 		:r
 	]
