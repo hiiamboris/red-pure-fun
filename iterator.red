@@ -103,6 +103,7 @@ iterator: context [
 			profiler/start rollin'
 			unless it/advance [do C4  return* :r]
 		]		; in case of break/return it's value is propagated up
+		do C4
 		:r
 	]
 
