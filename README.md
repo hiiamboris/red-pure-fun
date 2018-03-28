@@ -83,7 +83,7 @@ is similar to Red/Rebol: subexpressions come first
 suppose I have an expression `a b c d`, then it is evaluated in the following order:
 ```
  a
- b
+   b
  a b
      c
    b c
