@@ -293,7 +293,7 @@ pattern: context [
 					if token-match? pos/1/1 cue [		; finally found our new position
 						log-loop ["got a match! setting list to" mold/flat pos]
 						subject/1: pos
-						return* true
+						return true
 					]
 				]
 			]
@@ -463,13 +463,13 @@ pattern: context [
 		log-pattern ["score: trying" mold/flat pat "with" mold/flat values]
 		forall pat [
 			w: pat/1
-			unless token-match? w v/1 [ return* none ]
+			unless token-match? w v/1 [ return none ]
 			; only increase score if w is a value or repeated set-words
 			case [
 				set-word? w [
 					if prev-idx: find/reverse pat w [		; none or pat at the previous occurrence of w
 						prev-v: pick values index? prev-idx
-						if v/1 <> prev-v [return* none]		; drop the pattern - previous occurrence doesn't match
+						if v/1 <> prev-v [return none]		; drop the pattern - previous occurrence doesn't match
 						r: r + 1			; incr score for the value matched that of a repeated set-word
 					]
 				]
@@ -769,7 +769,7 @@ pure: context [
 			dispel as block! ppath
 			assert [not any-word? result]		; should return a value, I guess...
 			change/only/part expr result (arity + 1)
-			return* 1
+			return 1
 		]
 
 		none

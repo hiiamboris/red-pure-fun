@@ -83,7 +83,7 @@ iterator: context [
 	; rollin' 'x over stuff [...]
 	; rollin' [x y z] over stuff [...]
 	; BUG: 'return' from inside the body will only terminate the loop, but the workaround is slower
-	profiler/count
+	profiler/count/*
 ;	rollin': func [parts [block! word!] it [iterator!] code [block!] /local r] [
 	rollin': func [
 		"Iterate over arbitrary data"

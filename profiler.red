@@ -11,7 +11,11 @@ Red [
 			profiler/count g: func [x] [print x]
 			loop 1000 [f 1 2 3]
 			profiler/show
-		It is imperative to use `return*` instead of `return` inside of this profiled function body.
+
+		On /* refinementof profiler/count:
+		With /* the profiled function should use `return* value` instead of `return value`.
+		Without /* it can use `return` but should not define (and call) any inner functions that use `return`,
+		otherwise those inner functions will terminate the profiling function instead.
 
 		Lower-level:
 		f: does [
@@ -64,14 +68,24 @@ profiler: context [
 		t0: now/time/precise
 	]
 
-	count: func ['name [set-word!] func-def [function!]] [
+	count: func [
+		"Prefix any func with me to profile it"
+		'name [set-word!] "gotta have a name to account and display"
+		func-def [function!] "func definition"
+		/* {redefine return* instead of return:
+		With /* the profiled function should use `return* value` instead of `return value`.
+		Without /* it can use `return` but should not define (and call) any inner functions that use `return`,
+		otherwise those inner functions will terminate the profiling function instead}
+		/local return-name
+	] [
+		return-name: either * ['return*]['return]
 		do compose [set (to-lit-word name)
-			func spec-of :func-def compose/only [
-				start (to-word name)
-				; if I just redefined "return:", any inner (unprofiled) function call would've jumped here immediately
-				return*: func [x][throw/name x 'return]
+			func  append union spec-of :func-def [/local _stackdepth] return-name  compose/only [
+				profiler/start (to-word name)
+				_stackdepth: length? profiler/stack
+				(to-set-word return-name) func [x][throw/name x 'return]
 				set/any 'r catch/name (body-of :func-def) 'return
-				if (to-lit-word name) = last stack (compose [stop (to-word name)])
+				if _stackdepth = length? profiler/stack (compose [profiler/stop (to-word name)])
 				:r
 			]
 		]
