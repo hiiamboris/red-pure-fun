@@ -15,7 +15,7 @@ Red [
 		On /* refinementof profiler/count:
 		With /* the profiled function should use `return* value` instead of `return value`.
 		Without /* it can use `return` but should not define (and call) any inner functions that use `return`,
-		otherwise those inner functions will terminate the profiling function instead.
+		otherwise those inner functions will terminate the profiled function instead.
 
 		Lower-level:
 		f: does [
