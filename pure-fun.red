@@ -107,7 +107,11 @@ pattern: context [
 	valid-list?: func [pl [block!]] [ even? length? pl ]
 
 	empty-list: does [ conjure ]
-	empty-scope: does [ copy #() ]
+	empty-scope: has [m] [
+		also
+			m: copy #()
+			scope-push m compose/deep [[_scope_] [(m)]]
+	]
 
 	count?: func [pl [block!]] [
 		assert [valid-list? pl]

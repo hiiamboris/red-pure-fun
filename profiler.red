@@ -48,11 +48,13 @@ profiler: context [
 	t0: 0:0
 	stack: copy []
 
-	mark: has [name t] [
+	mark: has [name t b] [
 		t: now/time/precise
 		if name: last stack [
-			unless in times :name [times: make times compose [(to-set-word name) 0:0]]
-			times/:name: times/:name + t - t0
+			unless in times :name [times: make times compose/only [(to-set-word name) (reduce [0:0 0])] ]
+			b: times/:name
+			b/1: b/1 + t - t0
+			b/2: b/2 + 1
 		]
 	]
 
@@ -91,16 +93,20 @@ profiler: context [
 		]
 	]
 
-	show: has [lines total] [
+	show: function [] [
 		print "^/PROFILING STATS:"
 		total: 0:0
-		foreach [name time] body-of times [total: total + time]
+		foreach blk values-of times [total: total + blk/1]
 		total: max 0:0.001 total 		; no zero division
 		lines: copy []
-		foreach [name time] body-of times [
-			append/only lines reduce [round/to (to-percent (time / total)) 0.1 "^-" name "^-" time "^/"]
+		foreach [name blk] body-of times [
+			set [time calls] blk
+			append/only lines reduce [
+				round/to (to-percent (time / total)) 0.1 "^-"
+				pad name 24
+				time "^-in" calls "calls^/"]
 		]
-		append/only lines reduce [100% "^-* TOTAL *^-" total "^/"]
+		append/only lines reduce [100% "^-" pad "* TOTAL *" 24 total "^/"]
 		sort lines
 		print lines
 	]
