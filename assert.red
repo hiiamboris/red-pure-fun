@@ -37,7 +37,7 @@ assert: function [
 	]
 ]
 
-;assert: func [b][]		;-- uncomment to disable assertions
+assert: :comment		;-- uncomment to disable assertions
 
 
 ]

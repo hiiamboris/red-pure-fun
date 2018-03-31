@@ -100,12 +100,12 @@ profiler: context [
 		foreach [name time] body-of times [
 			append/only lines reduce [round/to (to-percent (time / total)) 0.1 "^-" name "^-" time "^/"]
 		]
+		append/only lines reduce [100% "^-* TOTAL *^-" total "^/"]
 		sort lines
 		print lines
 	]
 
 ]
-
 
 
 ]

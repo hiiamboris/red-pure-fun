@@ -22,17 +22,12 @@ Red [
 					;-- subject field will be set by 
 					subject: b
 		
-					;-- should return true if `advance` is needed upon the first entry to `rollin'`
-					needs-a-kick?: does [false]
-		
-					;-- reads & returns the data to the user
-					data: does [subject/2]
-
-					;-- moves the iterator on, returns false when out of items
-					advance: does [
-						if 3 >= length? subject [return false]
-						subject: skip subject 2
-						true
+					;-- reads & returns the data to the user, or unset! if no data
+					;-- hint: do [] returns unset!
+					retrieve: does [
+						also
+							either 2 <= length? subject [subject/2][do []]
+							subject: skip subject 2
 					]
 				]
 			]
@@ -55,15 +50,14 @@ iterator: context [
 	free-list: []
 	release: func [it [object!]] [append free-list it]
 
-	; TODO: a free list of iterators, until GC is there
+	; since bind is super slow, I decided to pass the iterator as a parameter to retrieve
+	; this way any new iterator can be created without a 'bind' invocation
 	forward: func ["Constructs a new iterator"] [
 		any [
 			take/last free-list
 			context [
-				advance: does [false]				; advances the iterator to the next position, in place, returns true on success, false if empty
-				data: does []								; reads the current item and returns, doesn't advance
-				needs-a-kick?: does [true]	; checks if there's no more items to return - for the initial advance() call
-				subject: none								; the stuff that's being iterated over, any format
+				retrieve: func [it][]		; reads the current item and advances the iterator, returns unset! when no data
+				subject: none						; the stuff that's being iterated over, any format
 			]
 		]
 	]
@@ -74,9 +68,8 @@ iterator: context [
 	iterator?: func [x][
 		all [
 			object? x
-			in x 'advance
-			in x 'data
-			in x 'needs-a-kick?
+			in x 'retrieve
+			in x 'subject
 		]
 	]
 
@@ -84,30 +77,26 @@ iterator: context [
 	; rollin' [x y z] over stuff [...]
 	; BUG: 'return' from inside the body will only terminate the loop, but the workaround is slower
 	profiler/count/*
-;	rollin': func [parts [block! word!] it [iterator!] code [block!] /local r] [
 	rollin': func [
 		"Iterate over arbitrary data"
 		parts [block! word!] "data receiver"
 		it [object!] "iterator"
 		code [block!] "what to do"
 		/keep "don't call release on the iterator"
-		/local r C4
+		/local r
 	] [
-		C4: [unless keep [release it]]
 		assert [iterator? it]
-		if it/needs-a-kick? [ unless it/advance [do C4  return* none] ]		; kick-start if need be
 		set/any 'r forever [
-			set parts it/data
-			profiler/stop rollin'
+			if unset? set/any parts (it/retrieve it) [break/return :r]
+;			profiler/stop rollin'
 			set/any 'r do code
-			profiler/start rollin'
-			unless it/advance [do C4  return* :r]
+;			profiler/start rollin'
 		]		; in case of break/return it's value is propagated up
-		do C4
+		unless keep [release it]
 		:r
 	]
 
-	assert [none = rollin' 'x forward []]
+	assert [none? rollin' 'x forward []]
 ]
 
 iterator?: :iterator/iterator?

@@ -70,10 +70,11 @@ test matching [f 2] 0
 test matching [g 3] 3
 
 serial: [
+	s => [[1 2 3]]
 	head b: => [ :first b ]
 	rest b: => [ :next b ]
 	x: ~ y: => [ :paren-join x y ]			;-- (thing ~ thing) concatenates 2 paren expressions into one
-	impure-join b: x: => [:append/only b x]
+	impure-join b: x: => [:append/only (:copy b) x]
 
 	replicate-tco c: [] => [c]
 	replicate-tco c: b: => [
@@ -89,6 +90,9 @@ serial: [
 	]
 	loop 0 => [0]
 	loop n: => [loop (n - 1)]
+	f => [1 +]
+	dup 0 b: => [b]
+	dup n: b: => [dup (head b) (rest b)]
 ]
 
 test serial [[]] []
@@ -103,9 +107,13 @@ test serial [(1 2) ~ (3 4)] to-paren [1 2 3 4]
 test serial [1 ~ 2] to-paren [1 2]
 test serial [(1 (2)) ~ ((3))] to-paren [1 2 3]
 test serial [(1 (2 3)) ~ ((4 5) 6)] to-paren [1 (2 3) (4 5) 6]
+test serial [(head s) ~ (rest s)] to-paren [1 2 3]
 
 hybrid: append copy arith serial
 ;log-eval: :print
+;test hybrid [loop 10] 0
+;print "   --------- ---------------------- ------------------  "
+;test hybrid [dup 2 (:copy [3 2 1 0])] []
 test hybrid [map-tco (:copy []) [negate] [1 2 3]] [-1 -2 -3]
 test hybrid [map-tco (:copy []) (1 +) [1 2 3]] [2 3 4]
 test hybrid [map-tco (:copy []) [1 +] [1 2 3]] [2 3 4]
@@ -113,8 +121,8 @@ test hybrid [map [negate] [1 2 3]] [-1 -2 -3]
 test hybrid [map (1 +) [1 2 3]] [2 3 4]
 test hybrid [map [1 +] [1 2 3]] [2 3 4]
 
-big-block-1: does [append/dup conjure -1 100]
-big-block1: does [append/dup conjure 1 100]
+big-block-1: does [append/dup conjure -1 1000]
+big-block1: does [append/dup conjure 1 1000]
 big-block2: does [append/dup conjure 2 100]
 ;test hybrid [loop 100] 0
 ;test hybrid [replicate-tco (:copy []) :big-block1] big-block1

@@ -97,37 +97,72 @@ pattern-symbol!: make typeset! [word! set-word! number! any-string! any-list! ch
 pattern-symbol?: func [v][find pattern-symbol! type? :v]
 
 
-
 pattern: context [
 	; import symbols from block magic
 	foreach w [conjure dispel transmute forge] [set w get in block-magic w]
-
+	
 	; naming convention:
 	; pl is for pattern list
-	; pt is for pattern tree
 
 	valid-list?: func [pl [block!]] [ even? length? pl ]
-	valid-tree?: func [pt [block!]] [ true ]		; no way to check currently: [] and [[]] and [[] [[patt exp]]] are all valid
 
 	empty-list: does [ conjure ]
-	empty-tree: does [ conjure ]
+	empty-scope: does [ copy #() ]
 
-	uplift-tree: func [pt [block!]] [
-		assert [valid-tree? pt]
-		assert [not empty? pt   "cannot uplift from an empty tree"]
-		pt/1
+	count?: func [pl [block!]] [
+		assert [valid-list? pl]
+		(length? pl) / 2
 	]
-	nest-tree: func [pt [block!]] [
-		assert [valid-tree? pt]
-		transmute [pt]
+
+	; makes a lookup key for a given pattern or expr
+	; everything but words is replaced by _, then a string is formed
+	mangle: func [pat [block!] /local r] [
+		mold/only/flat also
+			r: forge pat
+			forall r [unless word? r/1 [change r '_]]
 	]
+
+	; makes a lookup key for a given single-word pattern (for arguments)
+	mangle-arg: func [pat [block!] /local r] [
+		assert [1 = length? pat]
+		assert [word? :pat/1]
+		mold pat/1
+	]
+
+	; faster lookup, for single words
+	; => none if no match
+	; => [pat exp] if there's match
+	profiler/count
+	lookup-word: func [scope [map!] w [word!] /local pl] [
+		; select may return: none, [none], [[pat exp]]
+		all [
+			pl: select scope mold w
+			pl/1
+		]
+	]
+
+	; => none if no match
+	; => [pat exp] if single match
+	; => [pat exp] if >1 matches (winner is returned)
+	profiler/count
+	lookup: func [scope [map!] expr [block!] /local pl] [
+		; select may return: none, [none], [[pat exp pat exp ...]]
+		if all [
+			pl: select scope mangle expr
+			pl: pl/1
+		] [
+			assert [valid-list? pl]
+			;-- even if there's only 1 match it has to be score-d to check if it matches
+			pl: clash pl scores: collect-scores pl expr
+			dispel scores
+		]
+		pl
+	]
+
 
 	; append a pair of [pat exp] into a pattern-list or a pattern-tree (at it's current (inner) level)
 	list-attach: func [pl [block!] pat [block!] exp [block!]] [
 		list-attach-pair pl transmute [pat exp]
-	]
-	tree-attach: func [pt [block!] pat [block!] exp [block!]] [
-		tree-attach-pair pt transmute [pat exp]
 	]
 	list-attach-pair: func [pl [block!] pair [block!] /local i len] [
 		assert [all [block? pair/1  block? pair/2]		'pair]
@@ -136,64 +171,18 @@ pattern: context [
 		append/part pl pair 2
 		pl
 	]
-	tree-attach-pair: func [pt [block!] pair [block!] /local i len tgt] [
-		assert [all [block? pair/1  block? pair/2]		'pair]
-		assert [all [2 <= length? pair  1 <= min (length? pair/1) (length? pair/2)] 	'pair]
-		assert [valid-tree? pt]
-		; in a tree the insert goes into a specific index
-		i: 1 + (length? pair/1)
-		if i > len: length? pt [loop (i - len) [append/only pt empty-list]]
-		tgt: pt/:i
-		assert [block? tgt]			; can't attach to a context, or will have to copy it
-		append/part tgt pair 2
-		pt
-	]
-	; pt2 to pt1, pt1 is modified in place (nest if needed)
-	; pt2 should be unparented
-	tree-attach-tree: function [pt1 [block!] pt2 [block!]] [
-		assert [empty? uplift-tree pt2]
-		pt2: next pt2
-		forall pt2 [
-			pl: pt2/1
-			either object? pl [
-				foreach [name list] body-of pl [
-					assert [set-word? name]
-					assert [valid-list? list]
-					unless tail? list [
-						rollin' 'pair over-list list [tree-attach-pair pt1 pair]
-					]
-				]
-			][
-				assert [valid-list? pl]
-				unless tail? pl [
-					rollin' 'pair over-list pl [tree-attach-pair pt1 pair]
-				]
-			]
-		]
-		pt1
-	]
 
-
-	;free-list: stacks...
+	list-retrieve: func [it] [
+		also
+			either tail? it/subject [do []][it/subject]
+			it/subject: skip it/subject 2
+	]
 
 	; simple & fast iterator version
 	list-iterator: has [it] [
-		it: iterator/forward
-		it/needs-a-kick?: does bind [empty? subject/1] it
-		it/data: does bind [
-			assert [not empty? subject/1]
-			subject/1
-		] it
-		it/advance: does bind [
-			assert [none? subject/3]
-			assert [none? subject/4]
-			if not tail? subject/1 [
-				subject/1: skip subject/1 2
-				return not tail? subject/1
-			]
-			false
-		] it
-		it
+		also
+			it: iterator/forward
+			it/retrieve: :list-retrieve
 	]
 
 	; check if value matches the token
@@ -231,149 +220,106 @@ pattern: context [
 		either word? value [value]['_]
 	]
 
-	list-in-context: func [ct [object!] cue [word!] /local pos] [
-		pos: in ct symbol-for-value cue
-		either pos [get pos][[]]
-	]
-
-	; full-featured tree iterator
-	; requires all the fields set - tree, size, token (otherwise how to kickstart it and how to navigate in subcontexts?)
-	; since cue is matched against each pattern, it should a value occurred in expr (as is, even none!)
-	tree-iterator: has [it] [
-		it: iterator/forward
-		; subject is: [pos-in-plist size outer-tree|none 1st-token|none]
-		; initially not on the data, but will go with a kick
-		; have to recreate all the funcs because each iterator is bound to it's own context
-		it/needs-a-kick?: does bind [empty? subject/1] it
-		it/data: does bind [
-			assert [not empty? subject/1]
-			assert [not empty? subject/1/1		"pattern can't be empty"]
-			assert [token-match? subject/1/1/1 cue		"cue/pattern mismatch detected, oops"]
-			subject/1
-		] it
-		profiler/count
-		advance: function [] bind [
-			set [pos size tree cue] subject
-			assert [valid-tree? tree	'subject]
-			assert [integer? size		'subject]
-
-			log-loop ["^/advancing in a tree" mold/flat subject]
-
-			; linear advancement until cue is met (or the end)
-			while [not all [tail? pos  empty? tree]] [
-				pos: skip pos 2
-				log-loop ["+2 to pos -- now at" mold/flat pos]
-
-				; when empty, try going upwards
-				while [all [
-					tail? pos 					; no need to ascend unless pos is empty
-					not empty? tree			; important to skip none! too
-				]] [
-					log-loop ["list is empty, going up..."]
-					; try to find a pattern list in the uptree
-					if size < length? tree [			; tree has patterns of this size?
-						log-loop ["upper tree has got the patterns of required size" size]
-						pos: pick tree (size + 1)
-						if object? pos [		; get a block if it's a context
-							log-loop ["got a context, converting..."]
-							pos: list-in-context pos symbol-for-value cue
-						]
-						log-loop ["now working in the list:" mold/flat pos]
-					]
-					subject/3: tree: uplift-tree tree		; upwards...
-				]
-				; upon exit, either pos is unempty, or it is and there's nowhere more to go up
-				log-loop ["finished ascension"]
-
-				; check the cue, esp. if symbol is _ or there's no context - will have to match patterns one by one
-				unless tail? pos [
-					log-loop ["there's a pattern to check, at" mold/flat pos]
-					log-loop ["matching" mold/flat cue "against" mold/flat pos/1/1 "..."]
-					assert [not empty? pos/1		"pattern can't be empty"]
-					if token-match? pos/1/1 cue [		; finally found our new position
-						log-loop ["got a match! setting list to" mold/flat pos]
-						subject/1: pos
-						return true
-					]
-				]
-			]
-
-			log-loop ["finished.. at" mold/flat pos "^/"]
-
-			subject/1: pos
-			false
-		] it
-		it/advance: :advance
-		it
-	]
-
 	; simplistic iterator over a flat pattern list
-	over-list: func [pl [block!] /skip n [integer!] /local it] [
+	over-list: func [pl [block!] /local it] [
 		assert [valid-list? pl]
-		it: list-iterator
-		it/subject: transmute [either n [skip pl n * 2][pl]  none none none]
-		it
+		also
+			it: list-iterator
+			it/subject: pl
 	]
 
 	assert [123  = rollin' 'x over-list [[p][x]] [0 break/return 123]		"rollin's broken"]
 	assert [123  = rollin' 'x over-list [[p][x]] [123]	"rollin's broken"]
 	assert [none = rollin' 'x over-list [] [123]	"rollin's broken"]
 
-	; takes a tree and pattern size, and a cue
-	over-tree: func [pt [block!] size [integer!] cue /local it] [
-		assert [valid-tree? pt]
-		it: tree-iterator
-		it/subject: transmute [[] size pt cue]
-		it
+
+	; swaps the [pat exp] pairs of pl with those held by scope
+	; returns the old contents that can be used as argument again to swap back
+	; e.g. if there was `f x: _ 1` mangled as `f _ _ _` and now another f is defined as
+	; `f 1 2 3` also mangled as `f _ _ _`, this f totally overrides the previous and there's no way to match the old pattern
+	; pl must only contain similar patterns
+	; this fn should be only used to put new sets of pattern blocks
+	; TODO: do the swapping ver
+
+	; for now just addition.. and no returned crap
+	scope-decl: function [scope [map!] pl [block!]] [
+		pairs: forge pl
+		rollin' 'pair over-list pairs [
+			set [pat exp] pair
+			assert [block? pat]
+			assert [block? exp]
+			
+			; copy the [pat exp] sublist first, then change the original in place
+			key: mangle pat
+			blk: any [ scope/:key  scope/:key: transmute [conjure] ]
+			assert [1 = length? blk]
+			assert [not none? blk/1		"none! unsupported yet"]
+			list-attach-pair blk/1 pair
+		]
+		true
 	]
 
-	; takes a pattern-list and makes a context out of it
-	; (context is only meaningful for a specific pattern size and cue)
-	promote-to-context: function [pl [block!]] [
-		assert [valid-list? pl]
-		def: empty-list
-		rollin' 'pair over-list pl [
+	; put a list of arguments (x, y, etc) into a scope
+	; pl: [[x] [1] [y] [2] ...] (no 2 patterns should be similar)
+	; returns what was replaced in the form acceptable by scope-swap
+	; => ["x" [[ [x][1] ]] "y" [[ [y][2] ]] ...]
+	profiler/count
+	scope-push: function [scope [map!] pl [block!]] [
+		pairs: forge pl
+		rollin' 'pair over-list pairs [
 			set [pat exp] pair
-			w: either word? pat/1 [pat/1]['_]
-			unless sel: select def symbol-for-value pat/1 [
-				append def transmute [to-set-word w  sel: empty-list]
-			]
-			list-attach-pair sel pair
+			assert [block? pat]
+			assert [block? exp]
+
+			; copy the [pat exp] sublist first, then change the original in place
+			arg-pl: transmute [forge/part pair 2]
+			assert [1 = length? arg-pl]
+			assert [2 = length? arg-pl/1]
+			change/only change/only pair  mangle-arg pat  arg-pl
 		]
-		context def
+		scope-swap scope pairs
+	]
+
+	; takes a list of pairs "key"/[value] and replaces these in the map
+	; [value] is wrapped in a block to avoid a double lookup
+	; => ["key1" [pl1] "key2" [pl2] ...]
+	; if "key" wasn't in the map, [none] is returned
+	profiler/count
+	scope-swap: func [scope [map!] pairs [block!] /local key blk blk0] [
+		assert [even? length? pairs]
+		assert [0 < length? pairs]
+		
+		foreach [key blk] pairs [
+			assert [string? key]
+			assert [block? blk]
+			assert [1 = length? blk]
+
+			blk0: any [scope/:key  scope/:key: to-block none]
+			swap blk0 blk
+
+			assert [any [none? blk/1  block? blk/1] 	'blk]
+		]
+		pairs
 	]
 
 	assert [
-		(promote-to-context [
-			[a b c] [1]
-			[a c c] [2]
-			[b c d] [3]
-			[c] [4]
-			[d] [5]
-			[1] [6]
-		]) = context [
-			a: [ [a b c] [1] [a c c] [2] ]
-			b: [ [b c d] [3] ]
-			c: [ [c] [4] ]
-			d: [ [d] [5] ]
-			_: [ [1] [6] ]
-		]
-		'promote-to-context
-	]
-
-	count?: func [pl [block!]] [
-		assert [valid-list? pl]
-		(length? pl) / 2
+		do reduce [has [m] [
+			m: #()
+			all [
+				(compose/deep [ "x" [(none)] ]) = scope-push m [[x] [1]]
+				(compose/deep [ "x" [ [[x] [1]] ] "y _" [(none)] ])
+					= scope-swap m [ "x" [none] "y _" [ [[y 2] [2 2] [y 3] [3 3]] ] ]
+				scope-decl m [ [f 1][1 1] [f 2][2 2] [z]["Z"] ]
+				[[ [f 1][1 1] [f 2][2 2] ]] = select m "f _"
+				[[ [z]["Z"] ]] = select m "z"
+			]
+		]]
+		"scope operations are broken"
 	]
 
 
-
-	; compiled pattern format (outer [] can be empty):
-	[ [outer patterns] pattern expr pattern expr ...]
-	; TODO: make contexts
-	compile: function [spec [block!] /into outer [block!]] [
-		cpat: nest-tree any [outer empty-tree]
-		assert [valid-tree? cpat]
+	compile: function [spec [block!]] [
+		pl: empty-list
 		unless parse spec [
 			any [
 				end:
@@ -384,13 +330,13 @@ pattern: context [
 				ahead '=> skip		;-- "=>"
 				set exp skip
 				if (block? :exp)
-				(tree-attach cpat :pat :exp)
+				(list-attach pl :pat :exp)
 			]
 		] [print ["can't parse" mold spec "at" mold end]  throw "pattern error"]
-		assert [valid-tree? cpat]
-		pl: next cpat
-		forall pl [ change pl promote-to-context pl/1 ]
-		cpat
+	
+		also
+			scope: empty-scope
+			scope-decl scope pl
 	]
 
 	;catchall?: func [item] [any [item = '_  set-word? item]]
@@ -454,6 +400,7 @@ pattern: context [
 
 	; calc's pattern's score based on given values list
 	; => none if no match, >= 0 if a match
+	; TODO: -100 ? for speed
 	profiler/count
 	score?: function [pat [block!] values [block!]] [
 		assert [1 < length? pat]		; pointless for singular patterns
@@ -482,12 +429,19 @@ pattern: context [
 		log-pattern ["score of" pat "=" r]
 		r
 	]
+
+	collect-scores: func [pl [block!] expr [block!] /local r] [
+		r: forge []
+		rollin' [pat _] over-list pl [append r score? pat expr]
+		r
+	]
 		
 	; clashes similar patterns using a list of scores
 	; => selected [pattern expr]
+	profiler/count
 	clash: function [pl [block!] scores [block!]] [
 		assert [valid-list? pl]
-		assert [2 <= count? pl]
+		assert [1 <= count? pl]
 		assert [all-similar? pl]
 		assert [(count? pl) = length? scores]
 		
@@ -495,7 +449,7 @@ pattern: context [
 		best-score: -1
 		rollin' 'pair over-list pl [
 			set [pat exp] pair
-			if best-score <= scores/1 [
+			if all [scores/1  best-score <= scores/1] [
 				;assert [sc <> best-score		"ambiguous pattern match in clash"]
 				best-score: scores/1
 				winner: pair
@@ -546,8 +500,8 @@ pure: context [
 	;     but if value is immediately available w/o any changes, => 1
 	;   if not then => 1 and expr is changed in place with the result of eval-full
 	profiler/count
-	eval-single: function [expr [block!] 'with [word!] pt [block! none!] /deferred] [
-		log-eval ["eval-single" mold/flat expr "with" mold/flat pt "/" deferred]
+	eval-single: function [expr [block!] 'with [word!] scope [map!] /deferred] [
+		log-eval ["eval-single" mold/flat expr "with" mold/flat scope "/" deferred]
 
 		assert ['with = with	"syntax of eval-single is wrong"]
 		assert [1 <= length? expr]
@@ -560,29 +514,25 @@ pure: context [
 		; return values as is, and words too if tree is unspecified
 		r: 1
 		value: expr/1
-		if pt [
-			found?: false
-			case [
-				paren? value [subex: as block! value  found?: true]	
-				word? value [
-					rollin' [pat subex] (pattern/over-tree pt 1 value) [
-						assert [1 = length? pat]
-						if value = pat/1 [ found?: true  break ]		; found a match
-					]
-				]
+		found?: false
+		case [
+			paren? value [subex: as block! value  found?: true]	
+			word? value [
+				set [pat subex] pattern/lookup-word scope value
+				found?: not none? subex
 			]
-			if found? [		; unless it's a word that never matched or a normal (not parens value)
-				assert [block? subex]
-				r: either deferred [
-					transmute [pt subex]
-				][
-					subex: forge subex 	; for eval-full to change it in place
-					; eval-full always returns a singular value, parens if needed
-					subresult: eval-full subex with pt
-					change/only expr subresult
-					;dispel subex
-					1
-				]
+		]
+		if found? [		; unless it's a word that never matched or a normal (not parens value)
+			assert [block? subex]
+			r: either deferred [
+				transmute [scope subex]
+			][
+				subex: forge subex 	; for eval-full to change it in place
+				; eval-full always returns a singular value, parens if needed
+				subresult: eval-full subex with scope
+				change/only expr subresult
+				;dispel subex
+				1
 			]
 		]
 		log-eval ["eval-single =>" mold/flat expr/1]
@@ -591,33 +541,23 @@ pure: context [
 
 	; eval an expr of fixed size (expr block itself can be longer)
 	; => none if no match (and expr is unchanged), otherwise:
-	;   if /deferred then => [new-tree [subexpr]], expr is unchanged yet
+	;   if /deferred then => [new-scope [subexpr] backup], expr is unchanged yet
 	;   if not then => the new size (which is 1 ofc) and then the expr is changed in place with eval-full
 	profiler/count
-	eval-fixed: function [expr [block!] 'of [word!] size [integer!] 'with [word!] pt [block! none!] /deferred] [
-		log-eval ["eval-fixed" mold/flat expr "of" size "with" mold/flat pt "/" deferred]
+	eval-fixed: function [expr [block!] 'of [word!] size [integer!] 'with [word!] scope [map!] /deferred] [
+		log-eval ["eval-fixed" mold/flat expr "of" size "with" mold/flat scope "/" deferred]
 
 		assert [[of with] = transmute [of with]	"syntax of eval-fixed is wrong"]
 		assert [size <= length? expr]
 		assert [1 < size]		; otherwise should use eval-single
 		assert [not impure-path? expr/1]
 
-		matches: pattern/empty-list
-		scores: pattern/empty-list
+		matches: pattern/lookup scope ecopy: forge/part expr size
+		dispel ecopy
 
-		rollin' 'pair (pattern/over-tree pt size expr/1) [
-			set [pat subex] pair
-			log-eval ["expr is" mold/flat expr]
-			log-eval ["-- got" mold/flat pat mold/flat subex]
-			if sc: pattern/score? pat expr [		; not none if a match
-				pattern/list-attach-pair matches pair
-				append scores sc
-			]
-		]
 		log-eval ["matches:" mold/flat matches "scores:" mold/flat scores]
 		r: none
-		unless tail? matches [
-			assert [(pattern/count? matches) = length? scores]
+		unless empty? matches [
 			
 			; select a match
 			match: none
@@ -626,29 +566,29 @@ pure: context [
 			][
 				; got a couple of matches
 				; they should be all similar to be of use
-				if pattern/all-similar? matches [ match: pattern/clash matches scores ]
+				assert [pattern/all-similar? matches]
+				scores: pattern/collect-scores matches expr
+				match: pattern/clash matches scores
 			]
 
 			if match [
 				set [pat subex] match
+				backup: none
 
-				; populate the context with arguments
+				; populate the scope with arguments
 				extra-args: pattern/assign pat expr
-				; modify the tree pt
 				unless empty? extra-args [
-					pt: pattern/nest-tree pt
-					rollin' 'pair pattern/over-list extra-args [
-						pattern/tree-attach-pair pt pair
-					]
+					backup: pattern/scope-push scope extra-args
 				]
 
 				r: either deferred [
-					transmute [pt subex]
+					transmute [scope subex backup]
 				][
 					subex: forge subex 	; for eval-full to change it in place
 					; eval-full always returns a singular value, parens if needed
-					subresult: eval-full subex with pt
+					subresult: eval-full subex with scope
 					change/part/only expr subresult size
+					if backup [pattern/scope-swap scope backup]
 					;dispel subex
 					1
 				]
@@ -666,7 +606,7 @@ pure: context [
 	; => new size (= size means unmodified, since it maps multiple items into one)
 	; always true: 2 <= new size <= size
 	profiler/count
-	eval-subpatterns: function [expr [block!] 'of [word!] size [integer!] 'with [word!] pt [block! none!]] [
+	eval-subpatterns: function [expr [block!] 'of [word!] size [integer!] 'with [word!] scope [map!]] [
 		assert [[of with] = transmute [of with]	"syntax of eval-subpatterns is wrong"]
 		assert [size <= length? expr]
 		assert [2 < size]			; pointless with 2 tokens
@@ -674,7 +614,7 @@ pure: context [
 		subsize: 2
 		while [subsize < size] [
 			subex: skip expr (size - subsize)
-			if newsize: eval-fixed subex of subsize with pt [
+			if newsize: eval-fixed subex of subsize with scope [
 				assert [1 = newsize]
 				size: size - subsize + newsize
 				subsize: newsize
@@ -695,8 +635,8 @@ pure: context [
 	; expr is expected to be totally unevaluated
 	; size can be set to length? expr for unrestricted evaluation
 	profiler/count
-	eval-limited: function [expr [block!] 'until [word!] size [integer!] 'with [word!] pt [block! none!]] [
-		assert [[until with] = transmute [until with]	"syntax of eval-limited is wrong"]
+	eval-limited: function [expr [block!] 'till [word!] size [integer!] 'with [word!] scope [map!]] [
+		assert [[till with] = transmute [till with]	"syntax of eval-limited is wrong"]
 		assert [1 <= size]
 		assert [size <= length? expr]
 
@@ -707,22 +647,22 @@ pure: context [
 			; if it's a call to an impure func, call it
 			rest: skip expr done
 			either impure-path? rest/1 [
-				unless eval-impure rest with pt [
+				unless eval-impure rest with scope [
 					; there's an impure call that can't be done
 					; so there's no more need to try to match this expr, as it won't
 					break
 				]
 			][
 				; normal token
-				eval-single rest with pt
+				eval-single rest with scope
 			]
 			done: done + 1
 
 			; eval any subexpressions
-			if 3 <= done [ done: any [(eval-subpatterns expr of done with pt) done] ]
+			if 3 <= done [ done: any [(eval-subpatterns expr of done with scope) done] ]
 
 			; try to eval the whole piece
-			if 2 <= done [ done: any [(eval-fixed expr of done with pt) done] ]
+			if 2 <= done [ done: any [(eval-fixed expr of done with scope) done] ]
 		]
 
 		done
@@ -734,8 +674,8 @@ pure: context [
 	; => 1 on successful match (and thus call)
 	; => none otherwise (expr is unmodified)
 	profiler/count
-	eval-impure: function [expr [block!] 'with [word!] pt [block! none!]] [
-		log-eval ["^/eval-impure" mold/flat expr "with" mold/flat pt]
+	eval-impure: function [expr [block!] 'with [word!] scope [map!]] [
+		log-eval ["^/eval-impure" mold/flat expr "with" mold/flat scope]
 
 		assert ['with = with	"syntax of eval-impure is wrong"]
 		assert [1 <= length? expr]
@@ -748,7 +688,7 @@ pure: context [
 		if all [
 			1 <= arity 							; requires arguments?
 			arity < length? expr		; is there a chance we can have them?
-		][ eval-limited (next expr) until arity with pt ]
+		][ eval-limited (next expr) till arity with scope ]
 		
 		; invoke if there are enough args in the expr
 		if arity < length? expr [
@@ -782,11 +722,12 @@ pure: context [
 	; always works on the whole expr (no limits)
 	; TCO-enabled
 	profiler/count
-	eval-full: function [expr [block!] 'with [word!] pt [block! none!]] [
+	eval-full: function [expr [block!] 'with [word!] scope [map!]] [
 		assert ['with = with	"syntax of eval-full is wrong"]
 		assert [1 <= length? expr]
 
-		log-eval ["^/eval-full" mold/flat expr "with" mold/flat pt]
+		log-eval ["^/eval-full" mold/flat expr "with" mold/flat scope]
+		backups: conjure
 
 		until [
 			replaced?: false		; becomes true if TCO occurs
@@ -797,15 +738,14 @@ pure: context [
 				1 = length? expr [
 					; if it's a call to an impure func, call it
 					either impure-path? expr/1 [
-						eval-impure expr with pt
-						break		; can't let impure calls to return expressions... it's too much
+						eval-impure expr with scope
+						break		; can't let impure calls to return *expressions*... it's too much
 					][
 						; normal token + TCO is possible here immediately
-						if result: eval-single/deferred expr with pt [
+						if result: eval-single/deferred expr with scope [
 							if block? result [		; deferred can return 1 in case result was obvious
 								dispel expr
-								set [pt expr] result
-								expr: forge expr
+								expr: forge result/2
 								replaced?: true
 							]
 						]
@@ -822,36 +762,37 @@ pure: context [
 
 						; if it's a call to an impure func, call it
 						either impure-path? rest/1 [
-							unless (eval-impure rest with pt) [
+							unless (eval-impure rest with scope) [
 								; there's an impure call that can't be done
 								; so there's no more need to try to match this expr, as it won't
 								break
 							]
 						][
 							; otherwise eval the next token - expand the pattern
-							eval-single rest with pt
+							eval-single rest with scope
 						]
 						size: size + 1
 
 						; when size >= 3 eval subexpressions
 						if 3 <= size [
-							size: any [(eval-subpatterns expr of size with pt)  size]
+							size: any [(eval-subpatterns expr of size with scope)  size]
 						]
 
 						; try to eval the fully-sized subexpr
 						if 2 <= size [
 							either size = length? expr [
 								; TCO is possible when size = expr length
-								if result: eval-fixed/deferred expr of size with pt [
+								if result: eval-fixed/deferred expr of size with scope [
 									dispel expr
-									set [pt expr] result
+									set [scope expr backup] result
+									if backup [append/only backups backup]
 									expr: forge expr
 									replaced?: true
 									break		; start afresh from the 1st token
 								]
 							][
 								; otherwise must fork
-								size: any [(eval-fixed expr of size with pt)  size]
+								size: any [(eval-fixed expr of size with scope)  size]
 							]
 						]
 
@@ -862,6 +803,17 @@ pure: context [
 
 			not replaced?
 		]	; until..
+
+		; restore all backed up stuff back
+		; TODO: maybe speed it up somehow or just copy the map initially?
+		unless empty? backups [
+			backups: tail backups
+			until [
+				backups: back backups
+				pattern/scope-swap scope backups/1
+				head? backups
+			]
+		]
 
 		; should return paren if contains >1 token
 		r: either 1 < length? expr [
@@ -879,8 +831,8 @@ pure: context [
 		expr [block!] "<- yep, this one"
 		/using patterns [block!] "a set of patterns (rules) to match against"
 	] [
-		pt: either using [pattern/compile patterns][empty-tree]
-		eval-full (forge expr) with pt
+		scope: either using [pattern/compile patterns][empty-scope]
+		eval-full (forge expr) with scope
 	]
 	
 ]
