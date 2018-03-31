@@ -299,11 +299,19 @@ pattern: context [
 			assert [1 = length? blk]
 
 			blk0: any [scope/:key  scope/:key: to-block none]
-			swap blk0 blk
+			; never replace the link to self
+			unless all [blk0/1  key = "_scope_"] [
+				swap blk0 blk
+			]
 
 			assert [any [none? blk/1  block? blk/1] 	'blk]
 		]
 		pairs
+	]
+
+	; TODO: free list of maps for this case
+	scope-merge: func [scope1 [map!] scope2 [map!]] [
+		scope-swap scope1 body-of scope2
 	]
 
 	assert [
@@ -561,6 +569,7 @@ pure: context [
 		log-eval ["matches:" mold/flat matches "scores:" mold/flat scores]
 		r: none
 		unless empty? matches [
+			;print ["eval-fixed" mold/flat expr "of" size]
 			
 			; select a match
 			match: none
@@ -600,6 +609,7 @@ pure: context [
 		]
 		; if r = none then no (unambiguous) match => should return none
 		log-eval ["eval-fixed =>" mold/flat r]
+		;print ["eval-fixed =>" mold/flat r]
 		r  
 	]
 
@@ -770,6 +780,9 @@ pure: context [
 								; so there's no more need to try to match this expr, as it won't
 								break
 							]
+							; in case of impure func, don't advance the size
+							; suppose it returned a paren (expr ..), it should be reevaluated then
+							continue
 						][
 							; otherwise eval the next token - expand the pattern
 							eval-single rest with scope
@@ -833,8 +846,13 @@ pure: context [
 		"Evaluate a pure expression"
 		expr [block!] "<- yep, this one"
 		/using patterns [block!] "a set of patterns (rules) to match against"
+		/with scope [map!] "a map with precompiled patterns set"
 	] [
-		scope: either using [pattern/compile patterns][empty-scope]
+		assert [not all [using with] 	"too much args"]
+		scope: any [
+			scope
+			either using [pattern/compile patterns][empty-scope]
+		]
 		eval-full (forge expr) with scope
 	]
 	

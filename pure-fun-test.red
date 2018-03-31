@@ -70,13 +70,25 @@ impure-foldr: function [scope [map!] f [block! paren!] c b [block!]] [
 	c
 ]
 
+eval-in-subscope: func [scope [map!] subscope [map!] expr [block!] /local backup] [
+	backup: pattern/scope-merge scope subscope
+	also
+		pure/eval/with expr scope
+		(pattern/scope-swap scope backup
+		dispel backup)
+]
+
+
 
 arith: [
 	x: + y: => [ :mathop/3 '+ x y ]
 	x: - y: => [ :mathop/3 '- x y ]
 	x: * y: => [ :mathop/3 '* x y ]
 	x: / y: => [ :mathop/3 '/ x y ]
-	x: ** y: => [ :power/2 x y ]
+	x: ** y: => [ :mathop/3 '** x y ]
+	x: or y: => [ :mathop/3 'or x y ]
+	x: and y: => [ :mathop/3 'and x y ]
+	x: xor y: => [ :mathop/3 'xor x y ]
 	negate x: => [ :negate/1 x ]
 ]
 
@@ -135,6 +147,52 @@ serial: [
 	foldl f: c: b: => [ :impure-foldl _scope_ f c b ]
 	foldr f: c: b: => [ :impure-foldr _scope_ f c b ]
 
+	; wow, a fork!
+	if false then _ else y: => [y]
+	if 0 then _  else y: => [y]
+	if _ then x: else _  => [x]
+
+	; or like this
+	either false _ y: => [y]
+	either true x: _ => [x]
+	either 0 _ y: => [y]
+	either _ x: _ => [x]
+
+	x: = x: => [true]
+	x: = _ => [false]
+
+	true? 0 => [false]
+	true? false => [false]
+	true? true => [true]
+	true? _ => [true]
+
+	odd? x: => [0 = (x and 1)]
+	even? x: => [1 = (x and 1)]
+
+	; takes a block, evaluates as an expr
+	eval x: => [:to-paren/1 x]
+
+	split even: odd: [] => [ even odd ]
+	split even: odd: xs: => [
+		eval either (1 and (head xs))
+			[ split even (join odd head xs) (rest xs) ]
+			[ split (join even head xs) odd (rest xs) ]
+	]
+
+	split' even: odd: [] => [ even odd ]
+	split' even: odd: xs: => [
+		eval either (even? (head xs))
+			[ split' even (join odd head xs) (rest xs) ]
+			[ split' (join even head xs) odd (rest xs) ]
+	]
+
+	; it's faster to precompile a set of patterns once than upon every call
+	rules def: => [:pattern/compile/1 def]
+
+	expr: using def: => [
+		:eval-in-subscope/3 _scope_ (rules def) expr
+	]
+
 	sum x: y: => [x + y]
 	
 	loop 0 => [0]
@@ -160,6 +218,7 @@ test serial [(1 (2)) ~ ((3))] to-paren [1 2 3]
 test serial [(1 (2 3)) ~ ((4 5) 6)] to-paren [1 (2 3) (4 5) 6]
 test serial [(head s) ~ (rest s)] to-paren [1 2 3]
 test serial [join [1 2 3] 4] [1 2 3 4]
+test serial [join 1 (2 3)] [1 2 3]
 
 hybrid: append copy arith serial
 ;log-eval: :print
@@ -178,6 +237,28 @@ test hybrid [foldr [sum] 0 [1 2 3]] 6
 test hybrid [foldl [sum] 0 [1 2 3]] 6
 test hybrid [foldl [join] [] [1 2 3]] [1 2 3]
 test hybrid [foldr [join] [] [1 2 3]] [1 2 3]
+
+subst: does [[
+	x: + y: => [:mathop/3 '* x y]
+	sum 0 1 => [1]
+	sum 1 0 => [10]
+	sum _ _ => [100]
+]]
+
+test hybrid [ either true 1 2 ] 1
+test hybrid [ either false 1 2 ] 2
+test hybrid [ eval either true [1][2] ] 1
+test hybrid [ eval either false [1][2] ] 2
+test hybrid [ either (1 = 1) 1 2 ] 1
+test hybrid [ either (1 = 2) 1 2 ] 2
+test hybrid [eval [1 + 2]] 3
+test hybrid [1 and (head [1 2 3])] 1
+test hybrid [split  [] [] [1 2 3 4 5 6 7 8 9]] to-paren [[2 4 6 8] [1 3 5 7 9]]
+test hybrid [split' [] [] [1 2 3 4 5 6 7 8 9]] to-paren [[2 4 6 8] [1 3 5 7 9]]
+test hybrid [3 + 4] 7
+test hybrid [ [3 + 4] using (:subst/0) ] 12
+test hybrid [ [sum 1 0] using (:subst/0) ] 10
+test hybrid [ [map [sum 1] [0 1 2]] using (:subst/0) ] [10 100 100]
 
 big-block-1: does [append/dup conjure -1 500]
 big-block1: does [append/dup conjure 1 500]
