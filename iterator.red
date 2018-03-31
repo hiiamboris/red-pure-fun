@@ -24,10 +24,11 @@ Red [
 		
 					;-- reads & returns the data to the user, or unset! if no data
 					;-- hint: do [] returns unset!
-					retrieve: does [
+					;-- hint2: it is the iterator-self (to avoid rebinding the func body, which is slow)
+					retrieve: func [it] [
 						also
-							either 2 <= length? subject [subject/2][do []]
-							subject: skip subject 2
+							either 2 <= length? it/subject [it/subject/2][do []]
+							it/subject: skip it/subject 2
 					]
 				]
 			]

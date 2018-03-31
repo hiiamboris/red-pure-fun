@@ -402,9 +402,8 @@ pattern: context [
 		]
 	]
 
-	; calc's pattern's score based on given values list
-	; => none if no match, >= 0 if a match
-	; TODO: -100 ? for speed
+	; calc's pattern's score based on given values list (expr with it's items evaluated)
+	; => -100 if no match, >= 0 if a match
 	profiler/count
 	score?: function [pat [block!] values [block!]] [
 		assert [1 < length? pat]		; pointless for singular patterns
@@ -414,13 +413,13 @@ pattern: context [
 		log-pattern ["score: trying" mold/flat pat "with" mold/flat values]
 		forall pat [
 			w: pat/1
-			unless token-match? w v/1 [ return none ]
+			unless token-match? w v/1 [ return -100 ]
 			; only increase score if w is a value or repeated set-words
 			case [
 				set-word? w [
 					if prev-idx: find/reverse pat w [		; none or pat at the previous occurrence of w
 						prev-v: pick values index? prev-idx
-						if v/1 <> prev-v [return none]		; drop the pattern - previous occurrence doesn't match
+						if v/1 <> prev-v [return -100]		; drop the pattern - previous occurrence doesn't match
 						r: r + 1			; incr score for the value matched that of a repeated set-word
 					]
 				]
@@ -453,7 +452,7 @@ pattern: context [
 		best-score: -1
 		rollin' 'pair over-list pl [
 			set [pat exp] pair
-			if all [scores/1  best-score <= scores/1] [
+			if scores/1 > best-score [
 				;assert [sc <> best-score		"ambiguous pattern match in clash"]
 				best-score: scores/1
 				winner: pair
