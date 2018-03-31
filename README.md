@@ -21,11 +21,9 @@ some more info is in the file headers too
 
 ## status
 
-early alpha, very very early
+early alpha
 
-proves the concept, fun to play with, but slow as hell: can't handle a map() over 100 items
-
-suspended for now until I find a way to speed it up, like 100 times or so
+proves the concept, fun to play with, still slow but already can map() over 1k items
 
 might have lots of bugs yet
 
