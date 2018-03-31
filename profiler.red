@@ -113,6 +113,16 @@ profiler: context [
 
 ]
 
+;-- this one is totally independent
+clock: func [
+	"Evaluate some code and display the time it took"
+	code /local t1 t2
+] [
+	t1: now/precise/time
+	do code
+	t2: now/precise/time
+	print [(t2 - t1) mold/flat code]
+]
 
 ]
 

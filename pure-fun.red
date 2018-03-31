@@ -671,11 +671,15 @@ pure: context [
 			]
 			done: done + 1
 
+			; evaluating subexprs is unreliable here:
+			; `:f/2 x + y` ...  will fire with `x` and `+`
+			; so I disabled it completely
+			; use (x + y) to denote an expr
 			; eval any subexpressions
-			if 3 <= done [ done: any [(eval-subpatterns expr of done with scope) done] ]
+;			if 3 <= done [ done: any [(eval-subpatterns expr of done with scope) done] ]
 
 			; try to eval the whole piece
-			if 2 <= done [ done: any [(eval-fixed expr of done with scope) done] ]
+;			if 2 <= done [ done: any [(eval-fixed expr of done with scope) done] ]
 		]
 
 		done
@@ -782,7 +786,11 @@ pure: context [
 							]
 							; in case of impure func, don't advance the size
 							; suppose it returned a paren (expr ..), it should be reevaluated then
-							continue
+							either 1 = length? expr [
+								replaced?: true break		; use eval-single instead
+							][
+								continue
+							]
 						][
 							; otherwise eval the next token - expand the pattern
 							eval-single rest with scope

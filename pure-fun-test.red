@@ -186,12 +186,27 @@ serial: [
 			[ split' (join even head xs) odd (rest xs) ]
 	]
 
+	split'' even: odd: xs: => [	[	sp even odd xs ] 
+		using [
+			sp even: odd: [] => [even odd]
+			sp even: odd: xs: => [sp even2 odd2 r]
+			even2 => [eval either even? h [even][join even h]]
+			odd2  => [eval either even? h [join odd h][odd]]
+			h => [head xs]
+			r => [rest xs]
+		]
+	]
+
 	; it's faster to precompile a set of patterns once than upon every call
 	rules def: => [:pattern/compile/1 def]
 
 	expr: using def: => [
 		:eval-in-subscope/3 _scope_ (rules def) expr
 	]
+
+	; short-circuits: expr1 | [expr2 | [expr3 ...]]
+	true | _ => [true]
+	false | b: => [eval b]
 
 	sum x: y: => [x + y]
 	
@@ -255,6 +270,7 @@ test hybrid [eval [1 + 2]] 3
 test hybrid [1 and (head [1 2 3])] 1
 test hybrid [split  [] [] [1 2 3 4 5 6 7 8 9]] to-paren [[2 4 6 8] [1 3 5 7 9]]
 test hybrid [split' [] [] [1 2 3 4 5 6 7 8 9]] to-paren [[2 4 6 8] [1 3 5 7 9]]
+test hybrid [split'' [] [] [1 2 3 4 5 6 7 8 9]] to-paren [[2 4 6 8] [1 3 5 7 9]]
 test hybrid [3 + 4] 7
 test hybrid [ [3 + 4] using (:subst/0) ] 12
 test hybrid [ [sum 1 0] using (:subst/0) ] 10
@@ -262,11 +278,21 @@ test hybrid [ [map [sum 1] [0 1 2]] using (:subst/0) ] [10 100 100]
 
 big-block-1: does [append/dup conjure -1 500]
 big-block1: does [append/dup conjure 1 500]
+big-block-n: has [r i] [also  r: conjure  repeat i 100 [append r i]]
 ;test hybrid [loop 100] 0
 ;test hybrid [replicate-tco (:copy []) :big-block1] big-block1
 test hybrid [map [negate] :big-block1] big-block-1
 test hybrid [map (2 +) :big-block-1] big-block1
 test hybrid [foldl [sum] 0 :big-block1] length? big-block1
+
+even-the-odds: as paren! [
+[2 4 6 8 10 12 14 16 18 20 22 24 26 28 30 32 34 36 38 40 42 44 46 48 50 52 54 56 58 60 62 64 66 68 70 72 74 76 78 80 82 84 86 88 90 92 94 96 98 100]
+[1 3 5 7 9 11 13 15 17 19 21 23 25 27 29 31 33 35 37 39 41 43 45 47 49 51 53 55 57 59 61 63 65 67 69 71 73 75 77 79 81 83 85 87 89 91 93 95 97 99]
+]
+
+clock [test hybrid [split [][] :big-block-n] even-the-odds]
+clock [test hybrid [split' [][] :big-block-n] even-the-odds]
+clock [test hybrid [split'' [][] :big-block-n] even-the-odds]
 
 
 profiler/show
