@@ -48,13 +48,13 @@ profiler: context [
 	t0: 0:0
 	stack: copy []
 
-	mark: has [name t b] [
+	mark: func [/out /local name t b] [
 		t: now/time/precise
 		if name: last stack [
-			unless in times :name [times: make times compose/only [(to-set-word name) (reduce [0:0 0])] ]
+			unless in times :name [times: make times reduce [to-set-word name  reduce [0:0 0]] ]
 			b: times/:name
 			b/1: b/1 + t - t0
-			b/2: b/2 + 1
+			if out [b/2: b/2 + 1]		; don't count exit from an inner call as a call to this func
 		]
 	]
 
@@ -64,9 +64,10 @@ profiler: context [
 		t0: now/time/precise
 	]
 
-	stop: func ['name] [
-		mark
-		assert [(take/last stack) = name]
+	stop: func ['name /local lastname] [
+		mark/out
+		lastname: take/last stack
+		assert [lastname = name]
 		t0: now/time/precise
 	]
 
@@ -101,10 +102,12 @@ profiler: context [
 		lines: copy []
 		foreach [name blk] body-of times [
 			set [time calls] blk
+			percall: round/to  1e6 * (to-float time) / max 1 calls  0.1
 			append/only lines reduce [
 				round/to (to-percent (time / total)) 0.1 "^-"
 				pad name 24
-				time "^-in" calls "calls^/"]
+				time "^-in" calls "calls^-"
+				pad/left percall 7 "us/call" lf]
 		]
 		append/only lines reduce [100% "^-" pad "* TOTAL *" 24 total "^/"]
 		sort lines

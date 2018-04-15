@@ -29,6 +29,8 @@ block-magic: context [
 	forge: func [blk [block!] /part size [integer!]] [								;-- copy
 		append/part conjure blk any [size -1]
 	]
+
+	import: does bind [foreach w [conjure dispel transmute forge] [ set :w get in block-magic :w ] ] 'system
 ]
 
 

@@ -26,7 +26,6 @@ Red [
 #include %profiler.red
 #include %iterator.red
 
-
 ;------------- logging
 log-test: log-eval: log-pattern: log-loop:	:print
 ;-- comment these to show the appropriate info:
@@ -52,17 +51,24 @@ impure-path?: func [v][find impure-path! type? :v]
 
 ;-- gets the arity for a given impure-path! call
 ;impure-arity?: func [p [impure-path!]] [
-impure-arity?: func [p [get-word! get-path!]] [
+impure-arity?: func [p [get-word! get-path!] /local p2 tmp] [
 	assert [any [get-word? p  not empty? p]	'p]
 	either get-word? p [
 		preprocessor/func-arity? spec-of get (bind  to-word p  'system)
 	][
 		assert [get-path? p]
 		either integer? last p [last p][
-			;-- func-arity? doesn't handle objects well...
-			;-- simplest workaround is to append arity manually as /0 /1 etc
-			assert [not object? get/any p/1]
-			preprocessor/func-arity?/with  (spec-of get (bind  first p  'system))  to-path p
+			p2: as path! block-magic/conjure
+			until [
+				append  p2  pick p 1 + length? p2
+				any-function? get p2
+			]
+			; rebind to global context
+			p2: first bind tmp: block-magic/transmute [p2] 'system
+			also
+				preprocessor/func-arity?/with  (spec-of get p2)  to-path at p length? p2
+				(block-magic/dispel as block! p2
+				block-magic/dispel tmp)
 		]
 	]
 ]
@@ -86,8 +92,21 @@ assert [to-path 'x = purify-path	first [:x]  	'purify-path]
 assert [to-path 'x = purify-path	first [:x/3]  'purify-path]
 assert ['x/y       = purify-path	first [:x/y]  'purify-path]
 assert [3         = impure-arity?	first [:x/3]  'impure-arity?]
-;assert ['block-magic/conjure	= purify-path	first [:block-magic/conjure]  'purify-path]
-;assert [0 = impure-arity? first [:block-magic/conjure]  'impure-arity?]
+assert [
+	all [
+		c: context [ find: f: func [a b /c d /e f g /h][] ]
+		2 = impure-arity?	first [:c/f]
+		3 = impure-arity?	first [:c/f/c]
+		4 = impure-arity?	first [:c/f/e]
+		4 = impure-arity?	first [:c/f/e/h]
+		5 = impure-arity?	first [:c/f/c/e/h]
+		5 = impure-arity?	first [:c/find/c/e/h]
+		5 = impure-arity?	first [:c/find/c/e/h]
+		unset? unset 'c 	; cleanup
+	] 'impure-arity?
+]
+assert ['block-magic/conjure	= purify-path	first [:block-magic/conjure]  'purify-path]
+assert [0 = impure-arity? first [:block-magic/conjure]  'impure-arity?]
 
 
 
@@ -99,7 +118,7 @@ pattern-symbol?: func [v][find pattern-symbol! type? :v]
 
 pattern: context [
 	; import symbols from block magic
-	foreach w [conjure dispel transmute forge] [set w get in block-magic w]
+	block-magic/import
 	
 	; naming convention:
 	; pl is for pattern list
@@ -121,9 +140,14 @@ pattern: context [
 	; makes a lookup key for a given pattern or expr
 	; everything but words is replaced by _, then a string is formed
 	mangle: func [pat [block!] /local r] [
-		mold/only/flat also
-			r: forge pat
-			forall r [unless word? r/1 [change r '_]]
+		mold/flat/only also
+			r: conjure
+			parse pat [
+				collect into r some [
+					keep word! |
+					keep ('_) skip
+				]
+			]
 	]
 
 	; makes a lookup key for a given single-word pattern (for arguments)
@@ -501,7 +525,7 @@ pattern: context [
 
 pure: context [
 	; import symbols from block magic
-	foreach w [conjure dispel transmute forge] [set w get in block-magic w]
+	block-magic/import
 
 	; evaluation of a single-token pattern
 	; if token is a parens, forks with eval-full

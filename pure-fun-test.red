@@ -121,11 +121,11 @@ test matching [g 3] 3
 
 serial: [
 	s => [[1 2 3]]
-	head b: => [ :first b ]
-	rest b: => [ :next b ]
-	x: ~ y: => [ :paren-join x y ]			;-- (thing ~ thing) concatenates 2 paren expressions into one
-	join x: y: => [:impure-join x y]
-	impure-join b: x: => [:append/only b x]
+	head b: => [ :first/1 b ]
+	rest b: => [ :next/1 b ]
+	x: ~ y: => [ :paren-join/2 x y ]			;-- (thing ~ thing) concatenates 2 paren expressions into one
+	join x: y: => [:impure-join/2 x y]
+	impure-join b: x: => [:append/only/2 b x]
 
 	replicate-tco c: [] => [c]
 	replicate-tco c: b: => [
@@ -137,15 +137,15 @@ serial: [
 	map-tco c: _ [] => [c]
 	map-tco c: f: b: => [ map-tco (impure-join c (f ~ head b)) f (rest b) ]
 
-	map f: b: => [:impure-map _scope_ f b]
+	map f: b: => [:impure-map/3 _scope_ f b]
 
 	foldl' _  c: [] => [c]
 	foldl' f: c: b: => [
 		foldl' f (f ~ (c head b)) (rest b)
 	]
 
-	foldl f: c: b: => [ :impure-foldl _scope_ f c b ]
-	foldr f: c: b: => [ :impure-foldr _scope_ f c b ]
+	foldl f: c: b: => [ :impure-foldl/4 _scope_ f c b ]
+	foldr f: c: b: => [ :impure-foldr/4 _scope_ f c b ]
 
 	; wow, a fork!
 	if false then _ else y: => [y]
