@@ -14,7 +14,7 @@ Red [
 
 #include %block-magic.red
 
-if unset? :assert [
+unless attempt [get in system/words 'assert] [
 
 assert: function [
 	"Yer typical assertion"
@@ -24,17 +24,19 @@ assert: function [
 		[condition  "error message"]
 		[condition  'word-to-blame]
 		[condition]		<- in this case last word of condition is blamed}
+  /local tmp
 ][
-	set [cond msg] block-magic/transmute contract			;-- TODO: replace this with `reduce contract` when GC is available
+	set [cond msg] tmp: block-magic/transmute contract			;-- TODO: replace this with `reduce contract` when GC is available
 	unless cond [
 		print ["ASSERTION FAILURE:" mold contract]
 		either string? msg [
 			cause-error 'script 'invalid-arg [msg]
 		][
 			if none? msg [msg: last contract]
-			cause-error 'script 'invalid-refine-arg [msg  get msg]
+			cause-error 'script 'invalid-refine-arg [msg  mold/part/flat get msg 1024]
 		]
 	]
+	block-magic/dispel tmp
 ]
 
 assert: :comment		;-- uncomment to disable assertions
