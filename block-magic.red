@@ -14,7 +14,7 @@ Red [
 ]
 
 
-unless attempt [get system/words 'block-magic] [
+unless value? 'block-magic [
 
 ;-- this here magic is to avoid allocations in absence of the GC --
 ; I intentionally avoid make/free/reduce names,
